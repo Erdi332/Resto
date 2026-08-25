@@ -40,5 +40,6 @@ CREATE TABLE mouvements_stock (
     type_mouvement VARCHAR(20) NOT NULL, -- 'vente', 'achat', 'ajustement'
     quantite DECIMAL(10,3) NOT NULL,     -- négatif pour une sortie
     reference_id INTEGER,                -- id de la vente ou de l'achat lié
+    motif TEXT,                          -- raison d'un ajustement manuel
     date_mouvement TIMESTAMP NOT NULL DEFAULT NOW()
 );

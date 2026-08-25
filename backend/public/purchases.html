@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Purchases — Kitchen Ops</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <nav class="sidebar">
+    <div class="brand">
+      <div class="brand-title">Kitchen Ops</div>
+      <div class="brand-sub">Inventory &amp; Menu Control</div>
+    </div>
+    <ul class="nav-rail">
+      <li><a href="index.html"><span class="dot">01</span> Dashboard</a></li>
+      <li><a href="ingredients.html"><span class="dot">02</span> Ingredients</a></li>
+      <li><a href="dishes.html"><span class="dot">03</span> Dishes</a></li>
+      <li><a href="sales.html"><span class="dot">04</span> Sales</a></li>
+      <li><a href="purchases.html" class="active"><span class="dot">05</span> Purchases</a></li>
+      <li><a href="stock-history.html"><span class="dot">06</span> Stock History</a></li>
+    </ul>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="page-title">Purchases</div>
+      <div class="page-subtitle">Restock ingredients and review recent purchases.</div>
+    </div>
+
+    <section class="section">
+      <div class="section-title">Record a Purchase</div>
+      <form id="form-achat" class="form-grid">
+        <div class="field">
+          <label for="achat-ingredient">Ingredient</label>
+          <select id="achat-ingredient" required></select>
+        </div>
+        <div class="field">
+          <label for="achat-quantite">Quantity</label>
+          <input type="number" step="0.001" min="0" id="achat-quantite" required>
+        </div>
+        <div class="field">
+          <label for="achat-prix">Unit price</label>
+          <input type="number" step="0.01" min="0" id="achat-prix" placeholder="Optional">
+        </div>
+        <div class="field field-submit">
+          <label>&nbsp;</label>
+          <button type="submit" class="btn">Record Purchase</button>
+        </div>
+      </form>
+      <div id="message" class="form-message"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Recent Purchases</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Ingredient</th>
+              <th>Quantity</th>
+              <th>Unit Price</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody id="table-achats">
+            <tr class="empty-row"><td colspan="5">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+</div>
+
+<script>
+async function loadIngredientOptions() {
+  const res = await fetch('/api/ingredients');
+  const data = await res.json();
+  const select = document.querySelector('#achat-ingredient');
+  select.innerHTML = '';
+  data.forEach(ing => {
+    const opt = document.createElement('option');
+    opt.value = ing.id;
+    opt.textContent = `${ing.nom} (${ing.unite})`;
+    select.appendChild(opt);
+  });
+}
+
+async function loadPurchases() {
+  const res = await fetch('/api/achats');
+  const data = await res.json();
+  const tbody = document.querySelector('#table-achats');
+  tbody.innerHTML = '';
+
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No purchases recorded yet.</td></tr>';
+    return;
+  }
+
+  data.forEach(achat => {
+    const tr = document.createElement('tr');
+    const date = new Date(achat.date_achat).toLocaleString();
+    const qty = parseFloat(achat.quantite);
+    const unitPrice = achat.prix_unitaire !== null ? parseFloat(achat.prix_unitaire) : null;
+    const total = unitPrice !== null ? (qty * unitPrice).toFixed(2) : '—';
+    tr.innerHTML = `
+      <td class="num">${date}</td>
+      <td>${achat.ingredient_nom}</td>
+      <td class="num">${qty} ${achat.ingredient_unite}</td>
+      <td class="num">${unitPrice !== null ? '$' + unitPrice.toFixed(2) : '—'}</td>
+      <td class="num">${total !== '—' ? '$' + total : '—'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+document.querySelector('#form-achat').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.querySelector('#message');
+  msg.textContent = '';
+  msg.className = 'form-message';
+
+  const prixValue = document.querySelector('#achat-prix').value;
+
+  try {
+    const res = await fetch('/api/achats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ingredient_id: parseInt(document.querySelector('#achat-ingredient').value),
+        quantite: parseFloat(document.querySelector('#achat-quantite').value),
+        prix_unitaire: prixValue === '' ? null : parseFloat(prixValue),
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Request failed');
+    }
+
+    e.target.reset();
+    msg.textContent = 'Purchase recorded — stock updated.';
+    msg.classList.add('success');
+    loadPurchases();
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.classList.add('error');
+  }
+});
+
+loadIngredientOptions();
+loadPurchases();
+</script>
+
+</body>
+</html>
