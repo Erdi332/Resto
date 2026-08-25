@@ -12,14 +12,14 @@
 
   <nav class="sidebar">
     <div class="brand">
-      <div class="brand-title">KITCHEN OPS</div>
-      <div class="brand-sub">Inventory Ticket System</div>
+      <div class="brand-title">Kitchen Ops</div>
+      <div class="brand-sub">Inventory &amp; Menu Control</div>
     </div>
     <ul class="nav-rail">
-      <li><a href="index.html"><span class="dot">○</span> Dashboard</a></li>
-      <li><a href="ingredients.html"><span class="dot">○</span> Ingredients</a></li>
-      <li><a href="dishes.html"><span class="dot">○</span> Dishes</a></li>
-      <li><a href="sales.html" class="active"><span class="dot">●</span> Sales</a></li>
+      <li><a href="index.html"><span class="dot">01</span> Dashboard</a></li>
+      <li><a href="ingredients.html"><span class="dot">02</span> Ingredients</a></li>
+      <li><a href="dishes.html"><span class="dot">03</span> Dishes</a></li>
+      <li><a href="sales.html" class="active"><span class="dot">04</span> Sales</a></li>
     </ul>
   </nav>
 
@@ -31,7 +31,7 @@
 
     <section class="section">
       <div class="section-title">Record a Sale</div>
-      <form id="form-vente" class="ticket-form">
+      <form id="form-vente" class="form-grid">
         <div class="field">
           <label for="vente-plat">Dish</label>
           <select id="vente-plat" required></select>
@@ -57,10 +57,11 @@
               <th>Date</th>
               <th>Dish</th>
               <th>Quantity</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="table-ventes">
-            <tr class="empty-row"><td colspan="3">Loading…</td></tr>
+            <tr class="empty-row"><td colspan="4">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -90,7 +91,7 @@ async function loadSales() {
   tbody.innerHTML = '';
 
   if (data.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="3">No sales recorded yet.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No sales recorded yet.</td></tr>';
     return;
   }
 
@@ -101,10 +102,31 @@ async function loadSales() {
       <td class="num">${date}</td>
       <td>${vente.plat_nom}</td>
       <td class="num">${vente.quantite}</td>
+      <td>
+        <div class="row-actions">
+          <button type="button" class="btn btn-danger btn-small vente-cancel" data-id="${vente.id}">Cancel sale</button>
+        </div>
+      </td>
     `;
     tbody.appendChild(tr);
   });
 }
+
+document.querySelector('#table-ventes').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.vente-cancel');
+  if (!btn) return;
+
+  if (!confirm('Cancel this sale? The consumed stock will be restored.')) return;
+
+  const res = await fetch(`/api/ventes/${btn.dataset.id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json();
+    alert('Error: ' + err.error);
+    return;
+  }
+
+  loadSales();
+});
 
 document.querySelector('#form-vente').addEventListener('submit', async (e) => {
   e.preventDefault();

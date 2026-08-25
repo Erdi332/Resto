@@ -12,14 +12,14 @@
 
   <nav class="sidebar">
     <div class="brand">
-      <div class="brand-title">KITCHEN OPS</div>
-      <div class="brand-sub">Inventory Ticket System</div>
+      <div class="brand-title">Kitchen Ops</div>
+      <div class="brand-sub">Inventory &amp; Menu Control</div>
     </div>
     <ul class="nav-rail">
-      <li><a href="index.html" class="active"><span class="dot">●</span> Dashboard</a></li>
-      <li><a href="ingredients.html"><span class="dot">○</span> Ingredients</a></li>
-      <li><a href="dishes.html"><span class="dot">○</span> Dishes</a></li>
-      <li><a href="sales.html"><span class="dot">○</span> Sales</a></li>
+      <li><a href="index.html" class="active"><span class="dot">01</span> Dashboard</a></li>
+      <li><a href="ingredients.html"><span class="dot">02</span> Ingredients</a></li>
+      <li><a href="dishes.html"><span class="dot">03</span> Dishes</a></li>
+      <li><a href="sales.html"><span class="dot">04</span> Sales</a></li>
     </ul>
   </nav>
 
@@ -29,18 +29,18 @@
       <div class="page-subtitle">Today's snapshot of the kitchen inventory.</div>
     </div>
 
-    <div class="ticket-grid">
-      <div class="ticket">
-        <div class="ticket-label">Ingredients</div>
-        <div class="ticket-value" id="stat-ingredients">—</div>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">Ingredients</div>
+        <div class="stat-value" id="stat-ingredients">—</div>
       </div>
-      <div class="ticket">
-        <div class="ticket-label">Dishes</div>
-        <div class="ticket-value" id="stat-dishes">—</div>
+      <div class="stat-card">
+        <div class="stat-label">Dishes</div>
+        <div class="stat-value" id="stat-dishes">—</div>
       </div>
-      <div class="ticket" id="stat-lowstock-ticket">
-        <div class="ticket-label">Low stock alerts</div>
-        <div class="ticket-value" id="stat-lowstock">—</div>
+      <div class="stat-card" id="stat-lowstock-card">
+        <div class="stat-label">Low stock alerts</div>
+        <div class="stat-value" id="stat-lowstock">—</div>
       </div>
     </div>
 
@@ -69,9 +69,9 @@ async function loadDashboard() {
   document.querySelector('#stat-dishes').textContent = plats.length;
   document.querySelector('#stat-lowstock').textContent = lowStock.length;
 
-  const lowStockTicket = document.querySelector('#stat-lowstock-ticket');
+  const lowStockCard = document.querySelector('#stat-lowstock-card');
   if (lowStock.length > 0) {
-    lowStockTicket.classList.add('alert');
+    lowStockCard.classList.add('alert');
   }
 
   const list = document.querySelector('#alert-list');
