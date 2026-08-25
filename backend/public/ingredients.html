@@ -12,14 +12,14 @@
 
   <nav class="sidebar">
     <div class="brand">
-      <div class="brand-title">KITCHEN OPS</div>
-      <div class="brand-sub">Inventory Ticket System</div>
+      <div class="brand-title">Kitchen Ops</div>
+      <div class="brand-sub">Inventory &amp; Menu Control</div>
     </div>
     <ul class="nav-rail">
-      <li><a href="index.html"><span class="dot">○</span> Dashboard</a></li>
-      <li><a href="ingredients.html" class="active"><span class="dot">●</span> Ingredients</a></li>
-      <li><a href="dishes.html"><span class="dot">○</span> Dishes</a></li>
-      <li><a href="sales.html"><span class="dot">○</span> Sales</a></li>
+      <li><a href="index.html"><span class="dot">01</span> Dashboard</a></li>
+      <li><a href="ingredients.html" class="active"><span class="dot">02</span> Ingredients</a></li>
+      <li><a href="dishes.html"><span class="dot">03</span> Dishes</a></li>
+      <li><a href="sales.html"><span class="dot">04</span> Sales</a></li>
     </ul>
   </nav>
 
@@ -39,10 +39,11 @@
               <th>Stock</th>
               <th>Unit</th>
               <th>Alert threshold</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="table-ingredients">
-            <tr class="empty-row"><td colspan="4">Loading…</td></tr>
+            <tr class="empty-row"><td colspan="5">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -50,7 +51,7 @@
 
     <section class="section">
       <div class="section-title">Add an Ingredient</div>
-      <form id="form-ingredient" class="ticket-form">
+      <form id="form-ingredient" class="form-grid">
         <div class="field">
           <label for="ing-nom">Name</label>
           <input type="text" id="ing-nom" required>
@@ -79,29 +80,110 @@
 </div>
 
 <script>
+let ingredientsData = [];
+
 async function loadIngredients() {
   const res = await fetch('/api/ingredients');
-  const data = await res.json();
+  ingredientsData = await res.json();
+  renderIngredients();
+}
+
+function renderIngredients() {
   const tbody = document.querySelector('#table-ingredients');
   tbody.innerHTML = '';
 
-  if (data.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No ingredients yet.</td></tr>';
+  if (ingredientsData.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No ingredients yet.</td></tr>';
     return;
   }
 
-  data.forEach(ing => {
+  ingredientsData.forEach(ing => {
     const low = parseFloat(ing.stock_actuel) <= parseFloat(ing.seuil_alerte);
     const tr = document.createElement('tr');
+    tr.dataset.id = ing.id;
     tr.innerHTML = `
       <td>${ing.nom}</td>
       <td class="num ${low ? 'low-stock' : ''}">${parseFloat(ing.stock_actuel).toFixed(2)}</td>
       <td>${ing.unite}</td>
       <td class="num">${parseFloat(ing.seuil_alerte).toFixed(2)}</td>
+      <td>
+        <div class="row-actions">
+          <button type="button" class="btn btn-ghost btn-small ing-edit">Edit</button>
+          <button type="button" class="btn btn-danger btn-small ing-delete">Delete</button>
+        </div>
+      </td>
     `;
     tbody.appendChild(tr);
   });
 }
+
+function startEdit(tr, ing) {
+  tr.innerHTML = `
+    <td><input type="text" class="edit-input" data-field="nom" value="${ing.nom}"></td>
+    <td><input type="number" step="0.01" class="edit-input" data-field="stock_actuel" value="${parseFloat(ing.stock_actuel)}"></td>
+    <td><input type="text" class="edit-input" data-field="unite" value="${ing.unite}"></td>
+    <td><input type="number" step="0.01" class="edit-input" data-field="seuil_alerte" value="${parseFloat(ing.seuil_alerte)}"></td>
+    <td>
+      <div class="row-actions">
+        <button type="button" class="btn btn-small ing-save">Save</button>
+        <button type="button" class="btn btn-ghost btn-small ing-cancel">Cancel</button>
+      </div>
+    </td>
+  `;
+}
+
+document.querySelector('#table-ingredients').addEventListener('click', async (e) => {
+  const tr = e.target.closest('tr');
+  if (!tr || !tr.dataset.id) return;
+  const id = tr.dataset.id;
+  const ing = ingredientsData.find(i => String(i.id) === id);
+
+  if (e.target.classList.contains('ing-edit')) {
+    startEdit(tr, ing);
+    return;
+  }
+
+  if (e.target.classList.contains('ing-cancel')) {
+    renderIngredients();
+    return;
+  }
+
+  if (e.target.classList.contains('ing-save')) {
+    const payload = {};
+    tr.querySelectorAll('.edit-input').forEach(input => {
+      const field = input.dataset.field;
+      payload[field] = (field === 'nom' || field === 'unite') ? input.value : parseFloat(input.value);
+    });
+
+    const res = await fetch(`/api/ingredients/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      alert('Error: ' + err.error);
+      return;
+    }
+
+    loadIngredients();
+    return;
+  }
+
+  if (e.target.classList.contains('ing-delete')) {
+    if (!confirm(`Delete "${ing.nom}"?`)) return;
+
+    const res = await fetch(`/api/ingredients/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json();
+      alert('Error: ' + err.error);
+      return;
+    }
+
+    loadIngredients();
+  }
+});
 
 document.querySelector('#form-ingredient').addEventListener('submit', async (e) => {
   e.preventDefault();

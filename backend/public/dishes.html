@@ -12,14 +12,14 @@
 
   <nav class="sidebar">
     <div class="brand">
-      <div class="brand-title">KITCHEN OPS</div>
-      <div class="brand-sub">Inventory Ticket System</div>
+      <div class="brand-title">Kitchen Ops</div>
+      <div class="brand-sub">Inventory &amp; Menu Control</div>
     </div>
     <ul class="nav-rail">
-      <li><a href="index.html"><span class="dot">○</span> Dashboard</a></li>
-      <li><a href="ingredients.html"><span class="dot">○</span> Ingredients</a></li>
-      <li><a href="dishes.html" class="active"><span class="dot">●</span> Dishes</a></li>
-      <li><a href="sales.html"><span class="dot">○</span> Sales</a></li>
+      <li><a href="index.html"><span class="dot">01</span> Dashboard</a></li>
+      <li><a href="ingredients.html"><span class="dot">02</span> Ingredients</a></li>
+      <li><a href="dishes.html" class="active"><span class="dot">03</span> Dishes</a></li>
+      <li><a href="sales.html"><span class="dot">04</span> Sales</a></li>
     </ul>
   </nav>
 
@@ -38,10 +38,11 @@
               <th>Name</th>
               <th>Price</th>
               <th>Recipe</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="table-plats">
-            <tr class="empty-row"><td colspan="3">Loading…</td></tr>
+            <tr class="empty-row"><td colspan="4">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -49,7 +50,7 @@
 
     <section class="section">
       <div class="section-title">Add a Dish</div>
-      <form id="form-plat" class="ticket-form">
+      <form id="form-plat" class="form-grid">
         <div class="field">
           <label for="plat-nom">Name</label>
           <input type="text" id="plat-nom" required>
@@ -78,6 +79,7 @@
 
 <script>
 let ingredientsCache = [];
+let platsData = [];
 
 async function loadIngredientsCache() {
   const res = await fetch('/api/ingredients');
@@ -109,25 +111,49 @@ document.querySelector('#add-recipe-line').addEventListener('click', addRecipeLi
 
 async function loadDishes() {
   const res = await fetch('/api/plats');
-  const data = await res.json();
+  platsData = await res.json();
+  renderDishes();
+}
+
+function renderDishes() {
   const tbody = document.querySelector('#table-plats');
   tbody.innerHTML = '';
 
-  if (data.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="3">No dishes yet.</td></tr>';
+  if (platsData.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No dishes yet.</td></tr>';
     return;
   }
 
-  data.forEach(plat => {
+  platsData.forEach(plat => {
     const tr = document.createElement('tr');
     tr.dataset.platId = plat.id;
     tr.innerHTML = `
-      <td>${plat.nom}</td>
-      <td class="num">$${parseFloat(plat.prix).toFixed(2)}</td>
+      <td class="plat-nom">${plat.nom}</td>
+      <td class="num plat-prix">$${parseFloat(plat.prix).toFixed(2)}</td>
       <td><button type="button" class="recipe-toggle" data-plat-id="${plat.id}">View recipe</button></td>
+      <td>
+        <div class="row-actions">
+          <button type="button" class="btn btn-ghost btn-small plat-edit">Edit</button>
+          <button type="button" class="btn btn-danger btn-small plat-delete">Delete</button>
+        </div>
+      </td>
     `;
     tbody.appendChild(tr);
   });
+}
+
+function startEditDish(tr, plat) {
+  tr.innerHTML = `
+    <td><input type="text" class="edit-input" data-field="nom" value="${plat.nom}"></td>
+    <td><input type="number" step="0.01" min="0" class="edit-input" data-field="prix" value="${parseFloat(plat.prix)}"></td>
+    <td class="num">—</td>
+    <td>
+      <div class="row-actions">
+        <button type="button" class="btn btn-small plat-save">Save</button>
+        <button type="button" class="btn btn-ghost btn-small plat-cancel">Cancel</button>
+      </div>
+    </td>
+  `;
 }
 
 async function loadRecetteRows(platId) {
@@ -138,9 +164,12 @@ async function loadRecetteRows(platId) {
 function renderRecetteDetail(platId, lignes) {
   const listHtml = lignes.length
     ? `<ul class="recipe-detail-list">${lignes.map(l => `
-        <li>
-          <span>${l.ingredient_nom} — ${parseFloat(l.quantite_necessaire)} ${l.ingredient_unite}</span>
-          <button type="button" class="recipe-line-remove" data-recette-id="${l.id}" data-plat-id="${platId}">Remove</button>
+        <li data-recette-id="${l.id}">
+          <span>${l.ingredient_nom}</span>
+          <input type="number" step="0.001" min="0" class="recipe-line-qty" value="${parseFloat(l.quantite_necessaire)}">
+          <span>${l.ingredient_unite}</span>
+          <button type="button" class="btn btn-ghost btn-small recipe-line-save" data-recette-id="${l.id}" data-plat-id="${platId}">Save</button>
+          <button type="button" class="btn btn-danger btn-small recipe-line-remove" data-recette-id="${l.id}" data-plat-id="${platId}">Remove</button>
         </li>
       `).join('')}</ul>`
     : '<div class="recipe-detail-empty">No ingredients linked to this dish yet.</div>';
@@ -153,6 +182,12 @@ function renderRecetteDetail(platId, lignes) {
       <button type="submit" class="btn btn-secondary btn-small">Add to recipe</button>
     </form>
   `;
+}
+
+async function refreshRecetteDetail(platId) {
+  const lignes = await loadRecetteRows(platId);
+  const cell = document.querySelector(`tr.recipe-detail-row[data-plat-id="${platId}"] td`);
+  if (cell) cell.innerHTML = renderRecetteDetail(platId, lignes);
 }
 
 async function toggleRecetteRow(platId, toggleBtn) {
@@ -173,7 +208,7 @@ async function toggleRecetteRow(platId, toggleBtn) {
   const detailRow = document.createElement('tr');
   detailRow.className = 'recipe-detail-row';
   detailRow.dataset.platId = platId;
-  detailRow.innerHTML = `<td colspan="3">${renderRecetteDetail(platId, lignes)}</td>`;
+  detailRow.innerHTML = `<td colspan="4">${renderRecetteDetail(platId, lignes)}</td>`;
   platRow.after(detailRow);
 }
 
@@ -184,13 +219,76 @@ document.querySelector('#table-plats').addEventListener('click', async (e) => {
     return;
   }
 
+  const tr = e.target.closest('tr[data-plat-id]');
+  if (tr && !e.target.closest('.recipe-detail-row')) {
+    const platId = tr.dataset.platId;
+    const plat = platsData.find(p => String(p.id) === platId);
+
+    if (e.target.classList.contains('plat-edit')) {
+      startEditDish(tr, plat);
+      return;
+    }
+
+    if (e.target.classList.contains('plat-cancel')) {
+      renderDishes();
+      return;
+    }
+
+    if (e.target.classList.contains('plat-save')) {
+      const payload = {};
+      tr.querySelectorAll('.edit-input').forEach(input => {
+        const field = input.dataset.field;
+        payload[field] = field === 'nom' ? input.value : parseFloat(input.value);
+      });
+
+      const res = await fetch(`/api/plats/${platId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        alert('Error: ' + err.error);
+        return;
+      }
+
+      loadDishes();
+      return;
+    }
+
+    if (e.target.classList.contains('plat-delete')) {
+      if (!confirm(`Delete "${plat.nom}"?`)) return;
+
+      const res = await fetch(`/api/plats/${platId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.json();
+        alert('Error: ' + err.error);
+        return;
+      }
+
+      loadDishes();
+      return;
+    }
+  }
+
+  const saveLineBtn = e.target.closest('.recipe-line-save');
+  if (saveLineBtn) {
+    const li = saveLineBtn.closest('li');
+    const qty = parseFloat(li.querySelector('.recipe-line-qty').value);
+    await fetch(`/api/recette/${saveLineBtn.dataset.recetteId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quantite_necessaire: qty }),
+    });
+    refreshRecetteDetail(saveLineBtn.dataset.platId);
+    return;
+  }
+
   const removeBtn = e.target.closest('.recipe-line-remove');
   if (removeBtn) {
     await fetch(`/api/recette/${removeBtn.dataset.recetteId}`, { method: 'DELETE' });
-    const platId = removeBtn.dataset.platId;
-    const lignes = await loadRecetteRows(platId);
-    document.querySelector(`tr.recipe-detail-row[data-plat-id="${platId}"] td`).innerHTML =
-      renderRecetteDetail(platId, lignes);
+    refreshRecetteDetail(removeBtn.dataset.platId);
   }
 });
 
@@ -211,9 +309,7 @@ document.querySelector('#table-plats').addEventListener('submit', async (e) => {
     body: JSON.stringify({ ingredient_id: parseInt(ingredientId), quantite_necessaire: qty }),
   });
 
-  const lignes = await loadRecetteRows(platId);
-  document.querySelector(`tr.recipe-detail-row[data-plat-id="${platId}"] td`).innerHTML =
-    renderRecetteDetail(platId, lignes);
+  refreshRecetteDetail(platId);
 });
 
 document.querySelector('#form-plat').addEventListener('submit', async (e) => {
