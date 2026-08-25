@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock History — Kitchen Ops</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <nav class="sidebar">
+    <div class="brand">
+      <div class="brand-title">Kitchen Ops</div>
+      <div class="brand-sub">Inventory &amp; Menu Control</div>
+    </div>
+    <ul class="nav-rail">
+      <li><a href="index.html"><span class="dot">01</span> Dashboard</a></li>
+      <li><a href="ingredients.html"><span class="dot">02</span> Ingredients</a></li>
+      <li><a href="dishes.html"><span class="dot">03</span> Dishes</a></li>
+      <li><a href="sales.html"><span class="dot">04</span> Sales</a></li>
+      <li><a href="purchases.html"><span class="dot">05</span> Purchases</a></li>
+      <li><a href="stock-history.html" class="active"><span class="dot">06</span> Stock History</a></li>
+    </ul>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="page-title">Stock History</div>
+      <div class="page-subtitle">Every stock movement — sales, purchases, and manual adjustments.</div>
+    </div>
+
+    <section class="section">
+      <div class="section-title">Movements</div>
+      <form id="form-filter" class="form-grid" style="margin-bottom: 20px;">
+        <div class="field">
+          <label for="filter-ingredient">Filter by ingredient</label>
+          <select id="filter-ingredient">
+            <option value="">All ingredients</option>
+          </select>
+        </div>
+      </form>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Ingredient</th>
+              <th>Type</th>
+              <th>Quantity</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="table-mouvements">
+            <tr class="empty-row"><td colspan="5">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+</div>
+
+<script>
+async function loadIngredientFilterOptions() {
+  const res = await fetch('/api/ingredients');
+  const data = await res.json();
+  const select = document.querySelector('#filter-ingredient');
+  data.forEach(ing => {
+    const opt = document.createElement('option');
+    opt.value = ing.id;
+    opt.textContent = ing.nom;
+    select.appendChild(opt);
+  });
+}
+
+async function loadMovements() {
+  const ingredientId = document.querySelector('#filter-ingredient').value;
+  const url = ingredientId ? `/api/mouvements-stock?ingredient_id=${ingredientId}` : '/api/mouvements-stock';
+  const res = await fetch(url);
+  const data = await res.json();
+  const tbody = document.querySelector('#table-mouvements');
+  tbody.innerHTML = '';
+
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No stock movements yet.</td></tr>';
+    return;
+  }
+
+  data.forEach(mvt => {
+    const tr = document.createElement('tr');
+    const date = new Date(mvt.date_mouvement).toLocaleString();
+    const qty = parseFloat(mvt.quantite);
+    const qtyClass = qty >= 0 ? 'qty-positive' : 'qty-negative';
+    const qtySign = qty >= 0 ? '+' : '';
+    tr.innerHTML = `
+      <td class="num">${date}</td>
+      <td>${mvt.ingredient_nom}</td>
+      <td><span class="type-badge ${mvt.type_mouvement}">${mvt.type_mouvement}</span></td>
+      <td class="num ${qtyClass}">${qtySign}${qty} ${mvt.ingredient_unite}</td>
+      <td>${mvt.motif ? mvt.motif : '—'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+document.querySelector('#filter-ingredient').addEventListener('change', loadMovements);
+
+(async function init() {
+  await loadIngredientFilterOptions();
+  loadMovements();
+})();
+</script>
+
+</body>
+</html>
