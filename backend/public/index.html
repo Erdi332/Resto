@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Restaurant Inventory Management</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; }
+  h1 { color: #333; }
+  section { margin-bottom: 40px; border: 1px solid #ddd; padding: 20px; border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; }
+  th { background: #f5f5f5; }
+  .low-stock { color: #c0392b; font-weight: bold; }
+  form { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  input, select, button { padding: 8px; }
+  button { background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; }
+  button:hover { background: #34495e; }
+  #message { margin-top: 10px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>🍽️ Restaurant Inventory Management</h1>
+
+<section>
+  <h2>Ingredients in stock</h2>
+  <table id="table-ingredients">
+    <thead><tr><th>Name</th><th>Stock</th><th>Unit</th><th>Alert threshold</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Add an ingredient</h2>
+  <form id="form-ingredient">
+    <input type="text" id="ing-nom" placeholder="Name" required>
+    <input type="text" id="ing-unite" placeholder="Unit (kg, L...)" required>
+    <input type="number" step="0.01" id="ing-stock" placeholder="Initial stock" value="0">
+    <input type="number" step="0.01" id="ing-seuil" placeholder="Alert threshold" value="0">
+    <button type="submit">Add</button>
+  </form>
+</section>
+
+<section>
+  <h2>Dishes</h2>
+  <table id="table-plats">
+    <thead><tr><th>Name</th><th>Price</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Record a sale</h2>
+  <form id="form-vente">
+    <select id="vente-plat" required></select>
+    <input type="number" id="vente-quantite" placeholder="Quantity" value="1" min="1" required>
+    <button type="submit">Sell</button>
+  </form>
+  <div id="message"></div>
+</section>
+
+<script>
+async function loadIngredients() {
+  const res = await fetch('/api/ingredients');
+  const data = await res.json();
+  const tbody = document.querySelector('#table-ingredients tbody');
+  tbody.innerHTML = '';
+  data.forEach(ing => {
+    const low = parseFloat(ing.stock_actuel) <= parseFloat(ing.seuil_alerte);
+    tbody.innerHTML += `<tr>
+      <td>${ing.nom}</td>
+      <td class="${low ? 'low-stock' : ''}">${parseFloat(ing.stock_actuel).toFixed(2)}</td>
+      <td>${ing.unite}</td>
+      <td>${ing.seuil_alerte}</td>
+    </tr>`;
+  });
+}
+
+async function loadDishes() {
+  const res = await fetch('/api/plats');
+  const data = await res.json();
+  const tbody = document.querySelector('#table-plats tbody');
+  const select = document.querySelector('#vente-plat');
+  tbody.innerHTML = '';
+  select.innerHTML = '';
+  data.forEach(plat => {
+    tbody.innerHTML += `<tr><td>${plat.nom}</td><td>$${parseFloat(plat.prix).toFixed(2)}</td></tr>`;
+    select.innerHTML += `<option value="${plat.id}">${plat.nom}</option>`;
+  });
+}
+
+document.querySelector('#form-ingredient').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await fetch('/api/ingredients', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      nom: document.querySelector('#ing-nom').value,
+      unite: document.querySelector('#ing-unite').value,
+      stock_actuel: parseFloat(document.querySelector('#ing-stock').value),
+      seuil_alerte: parseFloat(document.querySelector('#ing-seuil').value),
+    }),
+  });
+  e.target.reset();
+  loadIngredients();
+});
+
+document.querySelector('#form-vente').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.querySelector('#message');
+  const res = await fetch('/api/ventes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      plat_id: parseInt(document.querySelector('#vente-plat').value),
+      quantite: parseInt(document.querySelector('#vente-quantite').value),
+    }),
+  });
+  if (res.ok) {
+    msg.style.color = 'green';
+    msg.textContent = 'Sale recorded ✅';
+    loadIngredients();
+  } else {
+    const err = await res.json();
+    msg.style.color = 'red';
+    msg.textContent = 'Error: ' + err.error;
+  }
+});
+
+loadIngredients();
+loadDishes();
+</script>
+
+</body>
+</html>
