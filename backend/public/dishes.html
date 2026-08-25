@@ -26,7 +26,7 @@
   <main class="main">
     <div class="page-header">
       <div class="page-title">Dishes</div>
-      <div class="page-subtitle">The menu — every dish that can be sold.</div>
+      <div class="page-subtitle">The menu — every dish that can be sold, and the ingredients each one needs.</div>
     </div>
 
     <section class="section">
@@ -37,10 +37,11 @@
             <tr>
               <th>Name</th>
               <th>Price</th>
+              <th>Recipe</th>
             </tr>
           </thead>
           <tbody id="table-plats">
-            <tr class="empty-row"><td colspan="2">Loading…</td></tr>
+            <tr class="empty-row"><td colspan="3">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -57,9 +58,16 @@
           <label for="plat-prix">Price</label>
           <input type="number" step="0.01" min="0" id="plat-prix" required>
         </div>
+
+        <div class="recipe-builder">
+          <label class="recipe-builder-label">Recipe — ingredients needed</label>
+          <div id="recipe-lines"></div>
+          <button type="button" id="add-recipe-line" class="btn btn-secondary btn-small">+ Add ingredient</button>
+        </div>
+
         <div class="field field-submit">
           <label>&nbsp;</label>
-          <button type="submit" class="btn">Add</button>
+          <button type="submit" class="btn">Add Dish</button>
         </div>
       </form>
       <div id="message" class="form-message"></div>
@@ -69,6 +77,36 @@
 </div>
 
 <script>
+let ingredientsCache = [];
+
+async function loadIngredientsCache() {
+  const res = await fetch('/api/ingredients');
+  ingredientsCache = await res.json();
+}
+
+function ingredientOptionsHtml() {
+  if (ingredientsCache.length === 0) {
+    return '<option value="">No ingredients yet</option>';
+  }
+  return ingredientsCache
+    .map(ing => `<option value="${ing.id}">${ing.nom} (${ing.unite})</option>`)
+    .join('');
+}
+
+function addRecipeLine() {
+  const row = document.createElement('div');
+  row.className = 'recipe-line';
+  row.innerHTML = `
+    <select class="recipe-ingredient">${ingredientOptionsHtml()}</select>
+    <input type="number" step="0.001" min="0" class="recipe-qty" placeholder="Quantity needed">
+    <button type="button" class="recipe-remove" title="Remove">✕</button>
+  `;
+  row.querySelector('.recipe-remove').addEventListener('click', () => row.remove());
+  document.querySelector('#recipe-lines').appendChild(row);
+}
+
+document.querySelector('#add-recipe-line').addEventListener('click', addRecipeLine);
+
 async function loadDishes() {
   const res = await fetch('/api/plats');
   const data = await res.json();
@@ -76,25 +114,120 @@ async function loadDishes() {
   tbody.innerHTML = '';
 
   if (data.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="2">No dishes yet.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="3">No dishes yet.</td></tr>';
     return;
   }
 
   data.forEach(plat => {
     const tr = document.createElement('tr');
+    tr.dataset.platId = plat.id;
     tr.innerHTML = `
       <td>${plat.nom}</td>
       <td class="num">$${parseFloat(plat.prix).toFixed(2)}</td>
+      <td><button type="button" class="recipe-toggle" data-plat-id="${plat.id}">View recipe</button></td>
     `;
     tbody.appendChild(tr);
   });
 }
+
+async function loadRecetteRows(platId) {
+  const res = await fetch(`/api/plats/${platId}/recette`);
+  return res.json();
+}
+
+function renderRecetteDetail(platId, lignes) {
+  const listHtml = lignes.length
+    ? `<ul class="recipe-detail-list">${lignes.map(l => `
+        <li>
+          <span>${l.ingredient_nom} — ${parseFloat(l.quantite_necessaire)} ${l.ingredient_unite}</span>
+          <button type="button" class="recipe-line-remove" data-recette-id="${l.id}" data-plat-id="${platId}">Remove</button>
+        </li>
+      `).join('')}</ul>`
+    : '<div class="recipe-detail-empty">No ingredients linked to this dish yet.</div>';
+
+  return `
+    ${listHtml}
+    <form class="recipe-add-line" data-plat-id="${platId}">
+      <select class="recipe-add-ingredient">${ingredientOptionsHtml()}</select>
+      <input type="number" step="0.001" min="0" class="recipe-add-qty" placeholder="Quantity needed" required>
+      <button type="submit" class="btn btn-secondary btn-small">Add to recipe</button>
+    </form>
+  `;
+}
+
+async function toggleRecetteRow(platId, toggleBtn) {
+  const existing = document.querySelector(`tr.recipe-detail-row[data-plat-id="${platId}"]`);
+  if (existing) {
+    existing.remove();
+    toggleBtn.textContent = 'View recipe';
+    return;
+  }
+
+  document.querySelectorAll('tr.recipe-detail-row').forEach(row => row.remove());
+  document.querySelectorAll('.recipe-toggle').forEach(btn => btn.textContent = 'View recipe');
+
+  toggleBtn.textContent = 'Hide recipe';
+  const lignes = await loadRecetteRows(platId);
+
+  const platRow = document.querySelector(`#table-plats tr[data-plat-id="${platId}"]`);
+  const detailRow = document.createElement('tr');
+  detailRow.className = 'recipe-detail-row';
+  detailRow.dataset.platId = platId;
+  detailRow.innerHTML = `<td colspan="3">${renderRecetteDetail(platId, lignes)}</td>`;
+  platRow.after(detailRow);
+}
+
+document.querySelector('#table-plats').addEventListener('click', async (e) => {
+  const toggleBtn = e.target.closest('.recipe-toggle');
+  if (toggleBtn) {
+    toggleRecetteRow(toggleBtn.dataset.platId, toggleBtn);
+    return;
+  }
+
+  const removeBtn = e.target.closest('.recipe-line-remove');
+  if (removeBtn) {
+    await fetch(`/api/recette/${removeBtn.dataset.recetteId}`, { method: 'DELETE' });
+    const platId = removeBtn.dataset.platId;
+    const lignes = await loadRecetteRows(platId);
+    document.querySelector(`tr.recipe-detail-row[data-plat-id="${platId}"] td`).innerHTML =
+      renderRecetteDetail(platId, lignes);
+  }
+});
+
+document.querySelector('#table-plats').addEventListener('submit', async (e) => {
+  const form = e.target.closest('.recipe-add-line');
+  if (!form) return;
+  e.preventDefault();
+
+  const platId = form.dataset.platId;
+  const ingredientId = form.querySelector('.recipe-add-ingredient').value;
+  const qty = parseFloat(form.querySelector('.recipe-add-qty').value);
+
+  if (!ingredientId || !qty) return;
+
+  await fetch(`/api/plats/${platId}/recette`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ingredient_id: parseInt(ingredientId), quantite_necessaire: qty }),
+  });
+
+  const lignes = await loadRecetteRows(platId);
+  document.querySelector(`tr.recipe-detail-row[data-plat-id="${platId}"] td`).innerHTML =
+    renderRecetteDetail(platId, lignes);
+});
 
 document.querySelector('#form-plat').addEventListener('submit', async (e) => {
   e.preventDefault();
   const msg = document.querySelector('#message');
   msg.textContent = '';
   msg.className = 'form-message';
+
+  const ingredients = Array.from(document.querySelectorAll('#recipe-lines .recipe-line'))
+    .map(row => ({
+      ingredient_id: parseInt(row.querySelector('.recipe-ingredient').value),
+      quantite_necessaire: parseFloat(row.querySelector('.recipe-qty').value),
+    }))
+    .filter(l => l.ingredient_id && l.quantite_necessaire > 0);
 
   try {
     const res = await fetch('/api/plats', {
@@ -103,6 +236,7 @@ document.querySelector('#form-plat').addEventListener('submit', async (e) => {
       body: JSON.stringify({
         nom: document.querySelector('#plat-nom').value,
         prix: parseFloat(document.querySelector('#plat-prix').value),
+        ingredients,
       }),
     });
 
@@ -112,6 +246,7 @@ document.querySelector('#form-plat').addEventListener('submit', async (e) => {
     }
 
     e.target.reset();
+    document.querySelector('#recipe-lines').innerHTML = '';
     msg.textContent = 'Dish added.';
     msg.classList.add('success');
     loadDishes();
@@ -121,7 +256,11 @@ document.querySelector('#form-plat').addEventListener('submit', async (e) => {
   }
 });
 
-loadDishes();
+(async function init() {
+  await loadIngredientsCache();
+  addRecipeLine();
+  loadDishes();
+})();
 </script>
 
 </body>

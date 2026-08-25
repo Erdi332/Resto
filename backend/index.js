@@ -45,13 +45,74 @@ app.get('/api/plats', async (req, res) => {
 });
 
 app.post('/api/plats', async (req, res) => {
-  const { nom, prix } = req.body;
+  const { nom, prix, ingredients } = req.body;
+  const client = await pool.connect();
+
   try {
-    const result = await pool.query(
+    await client.query('BEGIN');
+
+    const plat = await client.query(
       'INSERT INTO plats (nom, prix) VALUES ($1, $2) RETURNING *',
       [nom, prix]
     );
+
+    if (Array.isArray(ingredients)) {
+      for (const ligne of ingredients) {
+        await client.query(
+          'INSERT INTO recette (plat_id, ingredient_id, quantite_necessaire) VALUES ($1, $2, $3)',
+          [plat.rows[0].id, ligne.ingredient_id, ligne.quantite_necessaire]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json(plat.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// --- recette : ingrédients nécessaires pour un plat ---
+app.get('/api/plats/:id/recette', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT recette.id, recette.plat_id, recette.ingredient_id, recette.quantite_necessaire,
+              ingredients.nom AS ingredient_nom, ingredients.unite AS ingredient_unite
+       FROM recette
+       JOIN ingredients ON ingredients.id = recette.ingredient_id
+       WHERE recette.plat_id = $1
+       ORDER BY recette.id`,
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/plats/:id/recette', async (req, res) => {
+  const { ingredient_id, quantite_necessaire } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO recette (plat_id, ingredient_id, quantite_necessaire) VALUES ($1, $2, $3) RETURNING *',
+      [req.params.id, ingredient_id, quantite_necessaire]
+    );
     res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/recette/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM recette WHERE id = $1', [req.params.id]);
+    res.status(204).send();
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
