@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tracking — Kitchen Ops</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <nav class="sidebar">
+    <div class="brand">
+      <div class="brand-title">Kitchen Ops</div>
+      <div class="brand-sub">Inventory &amp; Menu Control</div>
+    </div>
+    <ul class="nav-rail">
+      <li><a href="index.html"><span class="dot">01</span> Dashboard</a></li>
+      <li><a href="ingredients.html"><span class="dot">02</span> Ingredients</a></li>
+      <li><a href="dishes.html"><span class="dot">03</span> Dishes</a></li>
+      <li><a href="sales.html"><span class="dot">04</span> Sales</a></li>
+      <li><a href="purchases.html"><span class="dot">05</span> Purchases</a></li>
+      <li><a href="stock-history.html"><span class="dot">06</span> Stock History</a></li>
+      <li><a href="tracking.html" class="active"><span class="dot">07</span> Tracking</a></li>
+    </ul>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="page-title">Tracking</div>
+      <div class="page-subtitle">Daily sales, food cost and profit.</div>
+    </div>
+
+    <form id="form-filter" class="form-grid" style="margin-bottom: 24px;">
+      <div class="field">
+        <label for="filter-debut">From</label>
+        <input type="date" id="filter-debut">
+      </div>
+      <div class="field">
+        <label for="filter-fin">To</label>
+        <input type="date" id="filter-fin">
+      </div>
+      <div class="field field-submit">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-secondary">Filter</button>
+      </div>
+    </form>
+
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">Revenue</div>
+        <div class="stat-value" id="stat-revenue">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Food cost</div>
+        <div class="stat-value" id="stat-cost">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Profit</div>
+        <div class="stat-value" id="stat-profit">—</div>
+      </div>
+    </div>
+
+    <section class="section">
+      <div class="section-title">Daily Breakdown</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Sales</th>
+              <th>Items sold</th>
+              <th>Revenue</th>
+              <th>Food cost</th>
+              <th>Profit</th>
+            </tr>
+          </thead>
+          <tbody id="table-rapport">
+            <tr class="empty-row"><td colspan="6">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+</div>
+
+<script>
+function formatMoney(n) {
+  return '$' + n.toFixed(2);
+}
+
+async function loadReport() {
+  const debut = document.querySelector('#filter-debut').value;
+  const fin = document.querySelector('#filter-fin').value;
+
+  const params = new URLSearchParams();
+  if (debut) params.set('date_debut', debut);
+  if (fin) params.set('date_fin', fin);
+
+  const res = await fetch('/api/rapport-ventes' + (params.toString() ? '?' + params.toString() : ''));
+  const data = await res.json();
+  const tbody = document.querySelector('#table-rapport');
+  tbody.innerHTML = '';
+
+  let totalRevenue = 0;
+  let totalCost = 0;
+
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No sales in this period.</td></tr>';
+  } else {
+    data.forEach(row => {
+      totalRevenue += row.chiffre_affaires;
+      totalCost += row.cout_matieres;
+
+      const tr = document.createElement('tr');
+      const date = new Date(row.jour).toLocaleDateString();
+      tr.innerHTML = `
+        <td>${date}</td>
+        <td class="num">${row.nb_ventes}</td>
+        <td class="num">${row.total_articles}</td>
+        <td class="num">${formatMoney(row.chiffre_affaires)}</td>
+        <td class="num">${formatMoney(row.cout_matieres)}</td>
+        <td class="num ${row.benefice >= 0 ? 'qty-positive' : 'qty-negative'}">${formatMoney(row.benefice)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  document.querySelector('#stat-revenue').textContent = formatMoney(totalRevenue);
+  document.querySelector('#stat-cost').textContent = formatMoney(totalCost);
+  const profitCard = document.querySelector('#stat-profit').closest('.stat-card');
+  const profit = totalRevenue - totalCost;
+  document.querySelector('#stat-profit').textContent = formatMoney(profit);
+  profitCard.classList.toggle('alert', profit < 0);
+}
+
+document.querySelector('#form-filter').addEventListener('submit', (e) => {
+  e.preventDefault();
+  loadReport();
+});
+
+loadReport();
+</script>
+
+</body>
+</html>

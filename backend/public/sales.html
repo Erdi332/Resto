@@ -22,6 +22,7 @@
       <li><a href="sales.html" class="active"><span class="dot">04</span> Sales</a></li>
       <li><a href="purchases.html"><span class="dot">05</span> Purchases</a></li>
       <li><a href="stock-history.html"><span class="dot">06</span> Stock History</a></li>
+      <li><a href="tracking.html"><span class="dot">07</span> Tracking</a></li>
     </ul>
   </nav>
 
@@ -41,6 +42,10 @@
         <div class="field">
           <label for="vente-quantite">Quantity</label>
           <input type="number" id="vente-quantite" value="1" min="1" required>
+        </div>
+        <div class="field">
+          <label for="vente-date">Date &amp; time</label>
+          <input type="datetime-local" id="vente-date">
         </div>
         <div class="field field-submit">
           <label>&nbsp;</label>
@@ -143,6 +148,7 @@ document.querySelector('#form-vente').addEventListener('submit', async (e) => {
       body: JSON.stringify({
         plat_id: parseInt(document.querySelector('#vente-plat').value),
         quantite: parseInt(document.querySelector('#vente-quantite').value),
+        date_vente: document.querySelector('#vente-date').value || undefined,
       }),
     });
 
@@ -154,6 +160,7 @@ document.querySelector('#form-vente').addEventListener('submit', async (e) => {
     msg.textContent = 'Sale recorded.';
     msg.classList.add('success');
     document.querySelector('#vente-quantite').value = 1;
+    document.querySelector('#vente-date').value = '';
     loadSales();
   } catch (err) {
     msg.textContent = 'Error: ' + err.message;
