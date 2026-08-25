@@ -10,10 +10,6 @@ const pool = new Pool({
 });
 
 // --- routes existantes ---
-app.get('/', async (req, res) => {
-  res.send('Ça marche !');
-});
-
 app.get('/api/ingredients', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM ingredients ORDER BY id');
@@ -41,6 +37,36 @@ app.post('/api/ingredients', async (req, res) => {
 app.get('/api/plats', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM plats ORDER BY id');
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/plats', async (req, res) => {
+  const { nom, prix } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO plats (nom, prix) VALUES ($1, $2) RETURNING *',
+      [nom, prix]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/ventes', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT ventes.id, ventes.plat_id, ventes.quantite, ventes.date_vente, plats.nom AS plat_nom
+       FROM ventes
+       JOIN plats ON plats.id = ventes.plat_id
+       ORDER BY ventes.date_vente DESC
+       LIMIT 50`
+    );
     res.json(result.rows);
   } catch (err) {
     console.error(err);
