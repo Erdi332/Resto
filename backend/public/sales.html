@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sales — Kitchen Ops</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <nav class="sidebar">
+    <div class="brand">
+      <div class="brand-title">KITCHEN OPS</div>
+      <div class="brand-sub">Inventory Ticket System</div>
+    </div>
+    <ul class="nav-rail">
+      <li><a href="index.html"><span class="dot">○</span> Dashboard</a></li>
+      <li><a href="ingredients.html"><span class="dot">○</span> Ingredients</a></li>
+      <li><a href="dishes.html"><span class="dot">○</span> Dishes</a></li>
+      <li><a href="sales.html" class="active"><span class="dot">●</span> Sales</a></li>
+    </ul>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="page-title">Sales</div>
+      <div class="page-subtitle">Record a sale and review recent activity.</div>
+    </div>
+
+    <section class="section">
+      <div class="section-title">Record a Sale</div>
+      <form id="form-vente" class="ticket-form">
+        <div class="field">
+          <label for="vente-plat">Dish</label>
+          <select id="vente-plat" required></select>
+        </div>
+        <div class="field">
+          <label for="vente-quantite">Quantity</label>
+          <input type="number" id="vente-quantite" value="1" min="1" required>
+        </div>
+        <div class="field field-submit">
+          <label>&nbsp;</label>
+          <button type="submit" class="btn">Record Sale</button>
+        </div>
+      </form>
+      <div id="message" class="form-message"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Recent Sales</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Dish</th>
+              <th>Quantity</th>
+            </tr>
+          </thead>
+          <tbody id="table-ventes">
+            <tr class="empty-row"><td colspan="3">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+</div>
+
+<script>
+async function loadDishOptions() {
+  const res = await fetch('/api/plats');
+  const data = await res.json();
+  const select = document.querySelector('#vente-plat');
+  select.innerHTML = '';
+  data.forEach(plat => {
+    const opt = document.createElement('option');
+    opt.value = plat.id;
+    opt.textContent = plat.nom;
+    select.appendChild(opt);
+  });
+}
+
+async function loadSales() {
+  const res = await fetch('/api/ventes');
+  const data = await res.json();
+  const tbody = document.querySelector('#table-ventes');
+  tbody.innerHTML = '';
+
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="3">No sales recorded yet.</td></tr>';
+    return;
+  }
+
+  data.forEach(vente => {
+    const tr = document.createElement('tr');
+    const date = new Date(vente.date_vente).toLocaleString();
+    tr.innerHTML = `
+      <td class="num">${date}</td>
+      <td>${vente.plat_nom}</td>
+      <td class="num">${vente.quantite}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+document.querySelector('#form-vente').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.querySelector('#message');
+  msg.textContent = '';
+  msg.className = 'form-message';
+
+  try {
+    const res = await fetch('/api/ventes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        plat_id: parseInt(document.querySelector('#vente-plat').value),
+        quantite: parseInt(document.querySelector('#vente-quantite').value),
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Request failed');
+    }
+
+    msg.textContent = 'Sale recorded.';
+    msg.classList.add('success');
+    document.querySelector('#vente-quantite').value = 1;
+    loadSales();
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.classList.add('error');
+  }
+});
+
+loadDishOptions();
+loadSales();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dishes — Kitchen Ops</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <nav class="sidebar">
+    <div class="brand">
+      <div class="brand-title">KITCHEN OPS</div>
+      <div class="brand-sub">Inventory Ticket System</div>
+    </div>
+    <ul class="nav-rail">
+      <li><a href="index.html"><span class="dot">○</span> Dashboard</a></li>
+      <li><a href="ingredients.html"><span class="dot">○</span> Ingredients</a></li>
+      <li><a href="dishes.html" class="active"><span class="dot">●</span> Dishes</a></li>
+      <li><a href="sales.html"><span class="dot">○</span> Sales</a></li>
+    </ul>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="page-title">Dishes</div>
+      <div class="page-subtitle">The menu — every dish that can be sold.</div>
+    </div>
+
+    <section class="section">
+      <div class="section-title">Menu</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Price</th>
+            </tr>
+          </thead>
+          <tbody id="table-plats">
+            <tr class="empty-row"><td colspan="2">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Add a Dish</div>
+      <form id="form-plat" class="ticket-form">
+        <div class="field">
+          <label for="plat-nom">Name</label>
+          <input type="text" id="plat-nom" required>
+        </div>
+        <div class="field">
+          <label for="plat-prix">Price</label>
+          <input type="number" step="0.01" min="0" id="plat-prix" required>
+        </div>
+        <div class="field field-submit">
+          <label>&nbsp;</label>
+          <button type="submit" class="btn">Add</button>
+        </div>
+      </form>
+      <div id="message" class="form-message"></div>
+    </section>
+  </main>
+
+</div>
+
+<script>
+async function loadDishes() {
+  const res = await fetch('/api/plats');
+  const data = await res.json();
+  const tbody = document.querySelector('#table-plats');
+  tbody.innerHTML = '';
+
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="2">No dishes yet.</td></tr>';
+    return;
+  }
+
+  data.forEach(plat => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${plat.nom}</td>
+      <td class="num">$${parseFloat(plat.prix).toFixed(2)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+document.querySelector('#form-plat').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.querySelector('#message');
+  msg.textContent = '';
+  msg.className = 'form-message';
+
+  try {
+    const res = await fetch('/api/plats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nom: document.querySelector('#plat-nom').value,
+        prix: parseFloat(document.querySelector('#plat-prix').value),
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Request failed');
+    }
+
+    e.target.reset();
+    msg.textContent = 'Dish added.';
+    msg.classList.add('success');
+    loadDishes();
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.classList.add('error');
+  }
+});
+
+loadDishes();
+</script>
+
+</body>
+</html>
