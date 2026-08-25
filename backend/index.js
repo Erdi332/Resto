@@ -9,6 +9,13 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+// --- migrations idempotentes : rattrape un volume Docker existant qui n'a pas
+// encore les colonnes ajoutées par une version plus récente du schéma ---
+async function runMigrations() {
+  await pool.query('ALTER TABLE mouvements_stock ADD COLUMN IF NOT EXISTS motif TEXT');
+  await pool.query('ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS cout_unitaire DECIMAL(10,2) NOT NULL DEFAULT 0');
+}
+
 // --- routes existantes ---
 app.get('/api/ingredients', async (req, res) => {
   try {
@@ -20,7 +27,7 @@ app.get('/api/ingredients', async (req, res) => {
   }
 });
 
-function validateIngredientFields({ nom, unite, stock_actuel, seuil_alerte }, { requireStock }) {
+function validateIngredientFields({ nom, unite, stock_actuel, seuil_alerte, cout_unitaire }, { requireStock }) {
   if (typeof nom !== 'string' || nom.trim() === '') {
     return { error: 'nom is required.' };
   }
@@ -30,6 +37,7 @@ function validateIngredientFields({ nom, unite, stock_actuel, seuil_alerte }, { 
 
   const stock = stock_actuel === undefined && !requireStock ? 0 : Number(stock_actuel);
   const seuil = seuil_alerte === undefined && !requireStock ? 0 : Number(seuil_alerte);
+  const cout = cout_unitaire === undefined && !requireStock ? 0 : Number(cout_unitaire);
 
   if (Number.isNaN(stock) || stock < 0) {
     return { error: 'stock_actuel must be a number >= 0.' };
@@ -37,8 +45,11 @@ function validateIngredientFields({ nom, unite, stock_actuel, seuil_alerte }, { 
   if (Number.isNaN(seuil) || seuil < 0) {
     return { error: 'seuil_alerte must be a number >= 0.' };
   }
+  if (Number.isNaN(cout) || cout < 0) {
+    return { error: 'cout_unitaire must be a number >= 0.' };
+  }
 
-  return { nom: nom.trim(), unite: unite.trim(), stock, seuil };
+  return { nom: nom.trim(), unite: unite.trim(), stock, seuil, cout };
 }
 
 app.post('/api/ingredients', async (req, res) => {
@@ -49,8 +60,8 @@ app.post('/api/ingredients', async (req, res) => {
 
   try {
     const result = await pool.query(
-      'INSERT INTO ingredients (nom, unite, stock_actuel, seuil_alerte) VALUES ($1, $2, $3, $4) RETURNING *',
-      [parsed.nom, parsed.unite, parsed.stock, parsed.seuil]
+      'INSERT INTO ingredients (nom, unite, stock_actuel, seuil_alerte, cout_unitaire) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [parsed.nom, parsed.unite, parsed.stock, parsed.seuil, parsed.cout]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -67,8 +78,8 @@ app.put('/api/ingredients/:id', async (req, res) => {
 
   try {
     const result = await pool.query(
-      'UPDATE ingredients SET nom = $1, unite = $2, stock_actuel = $3, seuil_alerte = $4 WHERE id = $5 RETURNING *',
-      [parsed.nom, parsed.unite, parsed.stock, parsed.seuil, req.params.id]
+      'UPDATE ingredients SET nom = $1, unite = $2, stock_actuel = $3, seuil_alerte = $4, cout_unitaire = $5 WHERE id = $6 RETURNING *',
+      [parsed.nom, parsed.unite, parsed.stock, parsed.seuil, parsed.cout, req.params.id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Ingredient not found' });
@@ -466,15 +477,70 @@ app.get('/api/ventes', async (req, res) => {
   }
 });
 
+// --- suivi journalier des ventes : chiffre d'affaires, coût matières, bénéfice ---
+app.get('/api/rapport-ventes', async (req, res) => {
+  const { date_debut, date_fin } = req.query;
+
+  try {
+    const result = await pool.query(
+      `SELECT DATE(ventes.date_vente) AS jour,
+              COUNT(*) AS nb_ventes,
+              SUM(ventes.quantite) AS total_articles,
+              SUM(ventes.quantite * plats.prix) AS chiffre_affaires,
+              COALESCE(SUM(ventes.quantite * cout.cout_plat), 0) AS cout_matieres
+       FROM ventes
+       JOIN plats ON plats.id = ventes.plat_id
+       LEFT JOIN (
+         SELECT recette.plat_id, SUM(recette.quantite_necessaire * ingredients.cout_unitaire) AS cout_plat
+         FROM recette
+         JOIN ingredients ON ingredients.id = recette.ingredient_id
+         GROUP BY recette.plat_id
+       ) cout ON cout.plat_id = plats.id
+       WHERE ($1::date IS NULL OR ventes.date_vente >= $1::date)
+         AND ($2::date IS NULL OR ventes.date_vente < $2::date + INTERVAL '1 day')
+       GROUP BY DATE(ventes.date_vente)
+       ORDER BY jour DESC`,
+      [date_debut || null, date_fin || null]
+    );
+
+    const rows = result.rows.map((row) => {
+      const chiffreAffaires = parseFloat(row.chiffre_affaires);
+      const coutMatieres = parseFloat(row.cout_matieres);
+      return {
+        jour: row.jour,
+        nb_ventes: parseInt(row.nb_ventes, 10),
+        total_articles: parseInt(row.total_articles, 10),
+        chiffre_affaires: chiffreAffaires,
+        cout_matieres: coutMatieres,
+        benefice: chiffreAffaires - coutMatieres,
+      };
+    });
+
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- NOUVELLE ROUTE : ventes avec décrément de stock ---
 app.post('/api/ventes', async (req, res) => {
-  const { plat_id, quantite } = req.body;
+  const { plat_id, quantite, date_vente } = req.body;
 
   if (!Number.isInteger(plat_id)) {
     return res.status(400).json({ error: 'plat_id is required.' });
   }
   if (typeof quantite !== 'number' || quantite <= 0) {
     return res.status(400).json({ error: 'quantite must be a number > 0.' });
+  }
+
+  let dateVente = null;
+  if (date_vente !== undefined && date_vente !== null && date_vente !== '') {
+    const parsedDate = new Date(date_vente);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return res.status(400).json({ error: 'date_vente must be a valid date.' });
+    }
+    dateVente = parsedDate;
   }
 
   const client = await pool.connect();
@@ -505,35 +571,54 @@ app.post('/api/ventes', async (req, res) => {
       return res.status(400).json({ error: 'This dish has no recipe defined and cannot be sold.' });
     }
 
+    // Une recette peut référencer le même ingrédient sur plusieurs lignes : on
+    // agrège d'abord le besoin total par ingrédient avant de vérifier le stock,
+    // sinon chaque ligne serait comparée indépendamment au même stock de départ
+    // et une vente pourrait passer alors que le besoin cumulé dépasse le stock.
+    const besoinsParIngredient = new Map();
     for (const ligne of recette.rows) {
       const quantiteADeduire = ligne.quantite_necessaire * quantite;
-      const stockDisponible = parseFloat(ligne.stock_actuel);
-
-      if (stockDisponible < quantiteADeduire) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({
-          error: `Insufficient stock for "${ligne.ingredient_nom}": need ${quantiteADeduire}, have ${stockDisponible}.`,
+      const existant = besoinsParIngredient.get(ligne.ingredient_id);
+      if (existant) {
+        existant.quantiteADeduire += quantiteADeduire;
+      } else {
+        besoinsParIngredient.set(ligne.ingredient_id, {
+          ingredient_nom: ligne.ingredient_nom,
+          stockDisponible: parseFloat(ligne.stock_actuel),
+          quantiteADeduire,
         });
       }
     }
 
-    const vente = await client.query(
-      'INSERT INTO ventes (plat_id, quantite) VALUES ($1, $2) RETURNING *',
-      [plat_id, quantite]
-    );
+    for (const besoin of besoinsParIngredient.values()) {
+      if (besoin.stockDisponible < besoin.quantiteADeduire) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Insufficient stock for "${besoin.ingredient_nom}": need ${besoin.quantiteADeduire}, have ${besoin.stockDisponible}.`,
+        });
+      }
+    }
 
-    for (const ligne of recette.rows) {
-      const quantiteADeduire = ligne.quantite_necessaire * quantite;
+    const vente = dateVente
+      ? await client.query(
+          'INSERT INTO ventes (plat_id, quantite, date_vente) VALUES ($1, $2, $3) RETURNING *',
+          [plat_id, quantite, dateVente]
+        )
+      : await client.query(
+          'INSERT INTO ventes (plat_id, quantite) VALUES ($1, $2) RETURNING *',
+          [plat_id, quantite]
+        );
 
+    for (const [ingredientId, besoin] of besoinsParIngredient.entries()) {
       await client.query(
         'UPDATE ingredients SET stock_actuel = stock_actuel - $1 WHERE id = $2',
-        [quantiteADeduire, ligne.ingredient_id]
+        [besoin.quantiteADeduire, ingredientId]
       );
 
       await client.query(
         `INSERT INTO mouvements_stock (ingredient_id, type_mouvement, quantite, reference_id)
          VALUES ($1, 'vente', $2, $3)`,
-        [ligne.ingredient_id, -quantiteADeduire, vente.rows[0].id]
+        [ingredientId, -besoin.quantiteADeduire, vente.rows[0].id]
       );
     }
 
@@ -597,4 +682,11 @@ app.delete('/api/ventes/:id', async (req, res) => {
 });
 
 // --- doit rester en dernier ---
-app.listen(3000, () => console.log('Serveur sur le port 3000'));
+runMigrations()
+  .then(() => {
+    app.listen(3000, () => console.log('Serveur sur le port 3000'));
+  })
+  .catch((err) => {
+    console.error('Migration failed:', err);
+    process.exit(1);
+  });

@@ -22,6 +22,7 @@
       <li><a href="sales.html"><span class="dot">04</span> Sales</a></li>
       <li><a href="purchases.html"><span class="dot">05</span> Purchases</a></li>
       <li><a href="stock-history.html"><span class="dot">06</span> Stock History</a></li>
+      <li><a href="tracking.html"><span class="dot">07</span> Tracking</a></li>
     </ul>
   </nav>
 
@@ -41,11 +42,12 @@
               <th>Stock</th>
               <th>Unit</th>
               <th>Alert threshold</th>
+              <th>Cost / unit</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="table-ingredients">
-            <tr class="empty-row"><td colspan="5">Loading…</td></tr>
+            <tr class="empty-row"><td colspan="6">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -69,6 +71,10 @@
         <div class="field">
           <label for="ing-seuil">Alert threshold</label>
           <input type="number" step="0.01" id="ing-seuil" value="0">
+        </div>
+        <div class="field">
+          <label for="ing-cout">Cost per unit</label>
+          <input type="number" step="0.01" min="0" id="ing-cout" value="0">
         </div>
         <div class="field field-submit">
           <label>&nbsp;</label>
@@ -95,7 +101,7 @@ function renderIngredients() {
   tbody.innerHTML = '';
 
   if (ingredientsData.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No ingredients yet.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No ingredients yet.</td></tr>';
     return;
   }
 
@@ -108,10 +114,10 @@ function renderIngredients() {
       <td class="num ${low ? 'low-stock' : ''}">${parseFloat(ing.stock_actuel).toFixed(2)}</td>
       <td>${ing.unite}</td>
       <td class="num">${parseFloat(ing.seuil_alerte).toFixed(2)}</td>
+      <td class="num">$${parseFloat(ing.cout_unitaire).toFixed(2)}</td>
       <td>
         <div class="row-actions">
           <button type="button" class="btn btn-ghost btn-small ing-edit">Edit</button>
-          <button type="button" class="btn btn-secondary btn-small ing-adjust-toggle" data-id="${ing.id}">Adjust stock</button>
           <button type="button" class="btn btn-danger btn-small ing-delete">Delete</button>
         </div>
       </td>
@@ -120,49 +126,13 @@ function renderIngredients() {
   });
 }
 
-function renderAdjustForm(ing) {
-  return `
-    <form class="adjust-form" data-id="${ing.id}">
-      <div class="field">
-        <label for="adjust-qty-${ing.id}">New stock quantity</label>
-        <input type="number" step="0.001" min="0" id="adjust-qty-${ing.id}" class="adjust-qty" value="${parseFloat(ing.stock_actuel)}" required>
-      </div>
-      <div class="field">
-        <label for="adjust-motif-${ing.id}">Reason</label>
-        <input type="text" id="adjust-motif-${ing.id}" class="adjust-motif" placeholder="Breakage, loss, physical count…" required>
-      </div>
-      <button type="submit" class="btn btn-small">Save adjustment</button>
-      <button type="button" class="btn btn-ghost btn-small ing-adjust-cancel" data-id="${ing.id}">Cancel</button>
-    </form>
-  `;
-}
-
-function toggleAdjustRow(id) {
-  const existing = document.querySelector(`tr.adjust-row[data-id="${id}"]`);
-  if (existing) {
-    existing.remove();
-    return;
-  }
-
-  document.querySelectorAll('tr.adjust-row').forEach(row => row.remove());
-
-  const ing = ingredientsData.find(i => String(i.id) === String(id));
-  const platRow = document.querySelector(`#table-ingredients tr[data-id="${id}"]`);
-  if (!platRow) return;
-
-  const adjustRow = document.createElement('tr');
-  adjustRow.className = 'adjust-row';
-  adjustRow.dataset.id = id;
-  adjustRow.innerHTML = `<td colspan="5">${renderAdjustForm(ing)}</td>`;
-  platRow.after(adjustRow);
-}
-
 function startEdit(tr, ing) {
   tr.innerHTML = `
     <td><input type="text" class="edit-input" data-field="nom" value="${ing.nom}"></td>
     <td><input type="number" step="0.01" class="edit-input" data-field="stock_actuel" value="${parseFloat(ing.stock_actuel)}"></td>
     <td><input type="text" class="edit-input" data-field="unite" value="${ing.unite}"></td>
     <td><input type="number" step="0.01" class="edit-input" data-field="seuil_alerte" value="${parseFloat(ing.seuil_alerte)}"></td>
+    <td><input type="number" step="0.01" class="edit-input" data-field="cout_unitaire" value="${parseFloat(ing.cout_unitaire)}"></td>
     <td>
       <div class="row-actions">
         <button type="button" class="btn btn-small ing-save">Save</button>
@@ -173,13 +143,8 @@ function startEdit(tr, ing) {
 }
 
 document.querySelector('#table-ingredients').addEventListener('click', async (e) => {
-  if (e.target.classList.contains('ing-adjust-toggle') || e.target.classList.contains('ing-adjust-cancel')) {
-    toggleAdjustRow(e.target.dataset.id);
-    return;
-  }
-
   const tr = e.target.closest('tr[data-id]');
-  if (!tr || !tr.dataset.id || tr.classList.contains('adjust-row')) return;
+  if (!tr || !tr.dataset.id) return;
   const id = tr.dataset.id;
   const ing = ingredientsData.find(i => String(i.id) === id);
 
@@ -230,30 +195,6 @@ document.querySelector('#table-ingredients').addEventListener('click', async (e)
   }
 });
 
-document.querySelector('#table-ingredients').addEventListener('submit', async (e) => {
-  const form = e.target.closest('.adjust-form');
-  if (!form) return;
-  e.preventDefault();
-
-  const id = form.dataset.id;
-  const quantite = parseFloat(form.querySelector('.adjust-qty').value);
-  const motif = form.querySelector('.adjust-motif').value;
-
-  const res = await fetch(`/api/ingredients/${id}/ajustement`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ quantite, motif }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json();
-    alert('Error: ' + err.error);
-    return;
-  }
-
-  loadIngredients();
-});
-
 document.querySelector('#form-ingredient').addEventListener('submit', async (e) => {
   e.preventDefault();
   const msg = document.querySelector('#message');
@@ -269,6 +210,7 @@ document.querySelector('#form-ingredient').addEventListener('submit', async (e) 
         unite: document.querySelector('#ing-unite').value,
         stock_actuel: parseFloat(document.querySelector('#ing-stock').value) || 0,
         seuil_alerte: parseFloat(document.querySelector('#ing-seuil').value) || 0,
+        cout_unitaire: parseFloat(document.querySelector('#ing-cout').value) || 0,
       }),
     });
 

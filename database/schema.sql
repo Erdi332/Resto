@@ -3,7 +3,8 @@ CREATE TABLE ingredients (
     nom VARCHAR(100) NOT NULL,
     unite VARCHAR(20) NOT NULL, -- ex: kg, L, unité
     stock_actuel DECIMAL(10,3) NOT NULL DEFAULT 0,
-    seuil_alerte DECIMAL(10,3) DEFAULT 0
+    seuil_alerte DECIMAL(10,3) DEFAULT 0,
+    cout_unitaire DECIMAL(10,2) NOT NULL DEFAULT 0 -- coût d'achat par unité, pour le calcul du bénéfice
 );
 
 CREATE TABLE plats (
