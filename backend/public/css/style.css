@@ -141,15 +141,40 @@ a { color: inherit; }
   margin-bottom: 6px;
 }
 
-.view-toggle select {
-  width: 100%;
-  padding: 8px 10px;
+.view-toggle-buttons {
+  display: flex;
   border: 1px solid rgba(250, 246, 239, 0.25);
   border-radius: 6px;
-  background: rgba(250, 246, 239, 0.06);
+  overflow: hidden;
+}
+
+.view-toggle-btn {
+  flex: 1;
+  padding: 8px 2px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid rgba(250, 246, 239, 0.15);
+  color: rgba(250, 246, 239, 0.6);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.view-toggle-btn:last-child {
+  border-right: none;
+}
+
+.view-toggle-btn:hover {
+  background: rgba(250, 246, 239, 0.08);
   color: var(--cream);
-  font-family: var(--font-body);
-  font-size: 0.85rem;
+}
+
+.view-toggle-btn.active {
+  background: var(--terracotta);
+  color: var(--cream);
 }
 
 .sidebar-user-name {
@@ -171,13 +196,22 @@ a { color: inherit; }
 .logout-btn {
   width: 100%;
   margin-top: 12px;
-  border-color: rgba(250, 246, 239, 0.25);
+  padding: 9px 14px;
+  background: transparent;
+  border: 1px solid rgba(250, 246, 239, 0.3);
+  border-radius: 7px;
   color: var(--cream);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.76rem;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 
 .logout-btn:hover {
-  background: rgba(250, 246, 239, 0.1);
-  border-color: rgba(250, 246, 239, 0.4);
+  background: rgba(250, 246, 239, 0.12);
+  border-color: rgba(250, 246, 239, 0.5);
   color: var(--cream);
 }
 
