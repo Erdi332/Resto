@@ -119,6 +119,68 @@ a { color: inherit; }
   color: var(--terracotta);
 }
 
+/* ---------- Sidebar footer: user badge, logout, admin view toggle ---------- */
+
+.sidebar-footer {
+  margin-top: 18px;
+  padding: 18px 22px 24px;
+  border-top: 1px solid rgba(250, 246, 239, 0.12);
+}
+
+.view-toggle {
+  margin-bottom: 16px;
+}
+
+.view-toggle label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgba(250, 246, 239, 0.5);
+  margin-bottom: 6px;
+}
+
+.view-toggle select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(250, 246, 239, 0.25);
+  border-radius: 6px;
+  background: rgba(250, 246, 239, 0.06);
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+}
+
+.sidebar-user-name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--cream);
+  font-size: 0.92rem;
+}
+
+.sidebar-user-role {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-top: 4px;
+}
+
+.logout-btn {
+  width: 100%;
+  margin-top: 12px;
+  border-color: rgba(250, 246, 239, 0.25);
+  color: var(--cream);
+}
+
+.logout-btn:hover {
+  background: rgba(250, 246, 239, 0.1);
+  border-color: rgba(250, 246, 239, 0.4);
+  color: var(--cream);
+}
+
 /* ---------- Main content ---------- */
 
 .main {

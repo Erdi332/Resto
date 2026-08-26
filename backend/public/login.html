@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — Kitchen Ops</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--ink);
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 360px;
+    background: var(--paper-light, var(--paper));
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 36px 32px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  }
+
+  .login-brand {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 700;
+    font-size: 2rem;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+
+  .login-sub {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 28px;
+  }
+
+  .login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .login-form label {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 6px;
+    display: block;
+  }
+
+  .login-form input {
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--cream);
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    color: var(--ink);
+  }
+
+  .login-form input:focus {
+    outline: none;
+    border-color: var(--terracotta);
+    background: var(--paper);
+  }
+
+  .login-form button {
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="login-brand">Kitchen Ops</div>
+  <div class="login-sub">Sign in to continue</div>
+
+  <form id="form-login" class="login-form">
+    <div>
+      <label for="username">Username</label>
+      <input type="text" id="username" autocomplete="username" required>
+    </div>
+    <div>
+      <label for="password">Password</label>
+      <input type="password" id="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="btn">Sign In</button>
+  </form>
+  <div id="message" class="form-message"></div>
+</div>
+
+<script>
+document.querySelector('#form-login').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.querySelector('#message');
+  msg.textContent = '';
+  msg.className = 'form-message';
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.querySelector('#username').value,
+        password: document.querySelector('#password').value,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Login failed');
+    }
+
+    window.location.href = '/';
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.classList.add('error');
+  }
+});
+</script>
+
+</body>
+</html>
