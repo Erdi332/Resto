@@ -44,3 +44,11 @@ CREATE TABLE mouvements_stock (
     motif TEXT,                          -- raison d'un ajustement manuel
     date_mouvement TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role VARCHAR(20) NOT NULL, -- 'admin', 'serveur', 'cuisine'
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);

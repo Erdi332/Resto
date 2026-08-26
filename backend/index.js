@@ -1,8 +1,64 @@
 const express = require('express');
+const session = require('express-session');
+const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 
 const app = express();
 app.use(express.json());
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'kitchen-ops-dev-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 1000 * 60 * 60 * 12 }, // 12h
+}));
+
+const ROLES = ['admin', 'serveur', 'cuisine'];
+
+// Pages accessibles par rôle. Une page absente de cette liste est accessible
+// à tout utilisateur authentifié (aucune n'est actuellement dans ce cas).
+const PAGE_ROLES = {
+  'index.html': ['admin', 'serveur', 'cuisine'],
+  'dishes.html': ['admin', 'cuisine'],
+  'ingredients.html': ['admin', 'cuisine'],
+  'sales.html': ['admin', 'serveur'],
+  'purchases.html': ['admin', 'cuisine'],
+  'stock-history.html': ['admin', 'cuisine'],
+  'tracking.html': ['admin'],
+  'users.html': ['admin'],
+};
+
+const DEFAULT_PAGE_BY_ROLE = {
+  admin: 'index.html',
+  serveur: 'sales.html',
+  cuisine: 'ingredients.html',
+};
+
+// --- contrôle d'accès aux pages HTML : redirige vers /login.html si non
+// authentifié, ou vers la page par défaut du rôle si la page n'est pas permise ---
+app.use((req, res, next) => {
+  if (req.path === '/login.html' || req.path.startsWith('/css/')) {
+    return next();
+  }
+
+  const isHtmlRequest = req.path === '/' || req.path.endsWith('.html');
+  if (!isHtmlRequest) {
+    return next();
+  }
+
+  const user = req.session.user;
+  if (!user) {
+    return res.redirect('/login.html');
+  }
+
+  const page = req.path === '/' ? 'index.html' : req.path.slice(1);
+  const allowedRoles = PAGE_ROLES[page];
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return res.redirect('/' + (DEFAULT_PAGE_BY_ROLE[user.role] || 'index.html'));
+  }
+
+  next();
+});
+
 app.use(express.static('public'));
 
 const pool = new Pool({
@@ -10,14 +66,151 @@ const pool = new Pool({
 });
 
 // --- migrations idempotentes : rattrape un volume Docker existant qui n'a pas
-// encore les colonnes ajoutées par une version plus récente du schéma ---
+// encore les colonnes/tables ajoutées par une version plus récente du schéma ---
 async function runMigrations() {
   await pool.query('ALTER TABLE mouvements_stock ADD COLUMN IF NOT EXISTS motif TEXT');
   await pool.query('ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS cout_unitaire DECIMAL(10,2) NOT NULL DEFAULT 0');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username VARCHAR(50) UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role VARCHAR(20) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  const admin = await pool.query("SELECT id FROM users WHERE username = 'admin'");
+  if (admin.rows.length === 0) {
+    const hash = await bcrypt.hash('123456', 10);
+    await pool.query(
+      "INSERT INTO users (username, password_hash, role) VALUES ('admin', $1, 'admin')",
+      [hash]
+    );
+    console.log('Seeded default admin account (username: admin / password: 123456).');
+  }
 }
 
+// --- middlewares d'autorisation API ---
+function requireAuth(req, res, next) {
+  if (!req.session.user) {
+    return res.status(401).json({ error: 'Authentication required.' });
+  }
+  next();
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.session.user) {
+      return res.status(401).json({ error: 'Authentication required.' });
+    }
+    if (!roles.includes(req.session.user.role)) {
+      return res.status(403).json({ error: 'You do not have permission to perform this action.' });
+    }
+    next();
+  };
+}
+
+// --- authentification ---
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password } = req.body;
+
+  if (typeof username !== 'string' || username.trim() === '' || typeof password !== 'string' || password === '') {
+    return res.status(400).json({ error: 'username and password are required.' });
+  }
+
+  try {
+    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username.trim()]);
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid username or password.' });
+    }
+
+    const user = result.rows[0];
+    const match = await bcrypt.compare(password, user.password_hash);
+    if (!match) {
+      return res.status(401).json({ error: 'Invalid username or password.' });
+    }
+
+    req.session.user = { id: user.id, username: user.username, role: user.role };
+    res.json(req.session.user);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.status(204).send();
+  });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).json({ error: 'Not authenticated.' });
+  }
+  res.json(req.session.user);
+});
+
+// --- gestion des comptes (admin uniquement) ---
+app.get('/api/users', requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, username, role, created_at FROM users ORDER BY id');
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/users', requireRole('admin'), async (req, res) => {
+  const { username, password, role } = req.body;
+
+  if (typeof username !== 'string' || username.trim() === '') {
+    return res.status(400).json({ error: 'username is required.' });
+  }
+  if (typeof password !== 'string' || password.length < 4) {
+    return res.status(400).json({ error: 'password must be at least 4 characters.' });
+  }
+  if (!ROLES.includes(role)) {
+    return res.status(400).json({ error: 'role must be admin, serveur or cuisine.' });
+  }
+
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      'INSERT INTO users (username, password_hash, role) VALUES ($1, $2, $3) RETURNING id, username, role, created_at',
+      [username.trim(), hash, role]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'This username is already taken.' });
+    }
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/users/:id', requireRole('admin'), async (req, res) => {
+  if (String(req.session.user.id) === String(req.params.id)) {
+    return res.status(400).json({ error: 'You cannot delete your own account.' });
+  }
+
+  try {
+    const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id', [req.params.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- routes existantes ---
-app.get('/api/ingredients', async (req, res) => {
+app.get('/api/ingredients', requireAuth, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM ingredients ORDER BY id');
     res.json(result.rows);
@@ -52,7 +245,7 @@ function validateIngredientFields({ nom, unite, stock_actuel, seuil_alerte, cout
   return { nom: nom.trim(), unite: unite.trim(), stock, seuil, cout };
 }
 
-app.post('/api/ingredients', async (req, res) => {
+app.post('/api/ingredients', requireRole('admin', 'cuisine'), async (req, res) => {
   const parsed = validateIngredientFields(req.body, { requireStock: false });
   if (parsed.error) {
     return res.status(400).json({ error: parsed.error });
@@ -70,7 +263,7 @@ app.post('/api/ingredients', async (req, res) => {
   }
 });
 
-app.put('/api/ingredients/:id', async (req, res) => {
+app.put('/api/ingredients/:id', requireRole('admin', 'cuisine'), async (req, res) => {
   const parsed = validateIngredientFields(req.body, { requireStock: true });
   if (parsed.error) {
     return res.status(400).json({ error: parsed.error });
@@ -92,7 +285,7 @@ app.put('/api/ingredients/:id', async (req, res) => {
 });
 
 // --- ajustement manuel de stock (casse, perte, comptage physique...) ---
-app.post('/api/ingredients/:id/ajustement', async (req, res) => {
+app.post('/api/ingredients/:id/ajustement', requireRole('admin', 'cuisine'), async (req, res) => {
   const { quantite, motif } = req.body;
   const nouveauStock = Number(quantite);
 
@@ -142,7 +335,7 @@ app.post('/api/ingredients/:id/ajustement', async (req, res) => {
   }
 });
 
-app.delete('/api/ingredients/:id', async (req, res) => {
+app.delete('/api/ingredients/:id', requireRole('admin', 'cuisine'), async (req, res) => {
   try {
     const result = await pool.query('DELETE FROM ingredients WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) {
@@ -158,7 +351,7 @@ app.delete('/api/ingredients/:id', async (req, res) => {
   }
 });
 
-app.get('/api/plats', async (req, res) => {
+app.get('/api/plats', requireAuth, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM plats ORDER BY id');
     res.json(result.rows);
@@ -195,7 +388,7 @@ function validateRecetteLines(ingredients) {
   return { lines: ingredients };
 }
 
-app.post('/api/plats', async (req, res) => {
+app.post('/api/plats', requireRole('admin', 'cuisine'), async (req, res) => {
   const parsedPlat = validatePlatFields(req.body);
   if (parsedPlat.error) {
     return res.status(400).json({ error: parsedPlat.error });
@@ -237,7 +430,7 @@ app.post('/api/plats', async (req, res) => {
   }
 });
 
-app.put('/api/plats/:id', async (req, res) => {
+app.put('/api/plats/:id', requireRole('admin', 'cuisine'), async (req, res) => {
   const parsed = validatePlatFields(req.body);
   if (parsed.error) {
     return res.status(400).json({ error: parsed.error });
@@ -258,7 +451,7 @@ app.put('/api/plats/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/plats/:id', async (req, res) => {
+app.delete('/api/plats/:id', requireRole('admin', 'cuisine'), async (req, res) => {
   try {
     const result = await pool.query('DELETE FROM plats WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) {
@@ -275,7 +468,7 @@ app.delete('/api/plats/:id', async (req, res) => {
 });
 
 // --- recette : ingrédients nécessaires pour un plat ---
-app.get('/api/plats/:id/recette', async (req, res) => {
+app.get('/api/plats/:id/recette', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT recette.id, recette.plat_id, recette.ingredient_id, recette.quantite_necessaire,
@@ -293,7 +486,7 @@ app.get('/api/plats/:id/recette', async (req, res) => {
   }
 });
 
-app.post('/api/plats/:id/recette', async (req, res) => {
+app.post('/api/plats/:id/recette', requireRole('admin', 'cuisine'), async (req, res) => {
   const { ingredient_id, quantite_necessaire } = req.body;
 
   if (!Number.isInteger(ingredient_id)) {
@@ -318,7 +511,7 @@ app.post('/api/plats/:id/recette', async (req, res) => {
   }
 });
 
-app.put('/api/recette/:id', async (req, res) => {
+app.put('/api/recette/:id', requireRole('admin', 'cuisine'), async (req, res) => {
   const { quantite_necessaire } = req.body;
 
   if (typeof quantite_necessaire !== 'number' || quantite_necessaire <= 0) {
@@ -340,7 +533,7 @@ app.put('/api/recette/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/recette/:id', async (req, res) => {
+app.delete('/api/recette/:id', requireRole('admin', 'cuisine'), async (req, res) => {
   try {
     await pool.query('DELETE FROM recette WHERE id = $1', [req.params.id]);
     res.status(204).send();
@@ -351,7 +544,7 @@ app.delete('/api/recette/:id', async (req, res) => {
 });
 
 // --- achats : réapprovisionnement des ingrédients ---
-app.get('/api/achats', async (req, res) => {
+app.get('/api/achats', requireRole('admin', 'cuisine'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT achats.id, achats.ingredient_id, achats.quantite, achats.prix_unitaire, achats.date_achat,
@@ -368,7 +561,7 @@ app.get('/api/achats', async (req, res) => {
   }
 });
 
-app.post('/api/achats', async (req, res) => {
+app.post('/api/achats', requireRole('admin', 'cuisine'), async (req, res) => {
   const { ingredient_id, quantite, prix_unitaire } = req.body;
 
   if (!Number.isInteger(ingredient_id)) {
@@ -428,7 +621,7 @@ app.post('/api/achats', async (req, res) => {
 });
 
 // --- historique des mouvements de stock (ventes, achats, ajustements) ---
-app.get('/api/mouvements-stock', async (req, res) => {
+app.get('/api/mouvements-stock', requireRole('admin', 'cuisine'), async (req, res) => {
   const { ingredient_id } = req.query;
 
   try {
@@ -461,7 +654,7 @@ app.get('/api/mouvements-stock', async (req, res) => {
   }
 });
 
-app.get('/api/ventes', async (req, res) => {
+app.get('/api/ventes', requireRole('admin', 'serveur'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT ventes.id, ventes.plat_id, ventes.quantite, ventes.date_vente, plats.nom AS plat_nom
@@ -478,7 +671,7 @@ app.get('/api/ventes', async (req, res) => {
 });
 
 // --- suivi journalier des ventes : chiffre d'affaires, coût matières, bénéfice ---
-app.get('/api/rapport-ventes', async (req, res) => {
+app.get('/api/rapport-ventes', requireRole('admin'), async (req, res) => {
   const { date_debut, date_fin } = req.query;
 
   try {
@@ -524,7 +717,7 @@ app.get('/api/rapport-ventes', async (req, res) => {
 });
 
 // --- NOUVELLE ROUTE : ventes avec décrément de stock ---
-app.post('/api/ventes', async (req, res) => {
+app.post('/api/ventes', requireRole('admin', 'serveur'), async (req, res) => {
   const { plat_id, quantite, date_vente } = req.body;
 
   if (!Number.isInteger(plat_id)) {
@@ -634,7 +827,7 @@ app.post('/api/ventes', async (req, res) => {
 });
 
 // --- annulation d'une vente : restaure le stock consommé ---
-app.delete('/api/ventes/:id', async (req, res) => {
+app.delete('/api/ventes/:id', requireRole('admin', 'serveur'), async (req, res) => {
   const client = await pool.connect();
 
   try {

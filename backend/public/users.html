@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Users — Kitchen Ops</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <nav class="sidebar">
+    <div class="brand">
+      <div class="brand-title">Kitchen Ops</div>
+      <div class="brand-sub">Inventory &amp; Menu Control</div>
+    </div>
+    <ul class="nav-rail">
+      <li><a href="index.html"><span class="dot">01</span> Dashboard</a></li>
+      <li><a href="ingredients.html"><span class="dot">02</span> Ingredients</a></li>
+      <li><a href="dishes.html"><span class="dot">03</span> Dishes</a></li>
+      <li><a href="sales.html"><span class="dot">04</span> Sales</a></li>
+      <li><a href="purchases.html"><span class="dot">05</span> Purchases</a></li>
+      <li><a href="stock-history.html"><span class="dot">06</span> Stock History</a></li>
+      <li><a href="tracking.html"><span class="dot">07</span> Tracking</a></li>
+      <li><a href="users.html" class="active"><span class="dot">08</span> Users</a></li>
+    </ul>
+    <div class="sidebar-footer" id="sidebar-footer"></div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="page-title">Users</div>
+      <div class="page-subtitle">Accounts for the front-of-house and kitchen devices.</div>
+    </div>
+
+    <section class="section">
+      <div class="section-title">Accounts</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="table-users">
+            <tr class="empty-row"><td colspan="4">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">Add an Account</div>
+      <form id="form-user" class="form-grid">
+        <div class="field">
+          <label for="user-username">Username</label>
+          <input type="text" id="user-username" required>
+        </div>
+        <div class="field">
+          <label for="user-password">Password</label>
+          <input type="password" id="user-password" minlength="4" required>
+        </div>
+        <div class="field">
+          <label for="user-role">Role</label>
+          <select id="user-role">
+            <option value="serveur">Server</option>
+            <option value="cuisine">Kitchen</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="field field-submit">
+          <label>&nbsp;</label>
+          <button type="submit" class="btn">Add Account</button>
+        </div>
+      </form>
+      <div id="message" class="form-message"></div>
+    </section>
+  </main>
+
+</div>
+
+<script>
+let currentUser = null;
+
+async function loadUsers() {
+  const [usersRes, meRes] = await Promise.all([
+    fetch('/api/users'),
+    fetch('/api/auth/me'),
+  ]);
+  const data = await usersRes.json();
+  currentUser = await meRes.json();
+
+  const tbody = document.querySelector('#table-users');
+  tbody.innerHTML = '';
+
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No accounts yet.</td></tr>';
+    return;
+  }
+
+  data.forEach(u => {
+    const tr = document.createElement('tr');
+    const created = new Date(u.created_at).toLocaleDateString();
+    const isSelf = currentUser && currentUser.id === u.id;
+    tr.innerHTML = `
+      <td>${u.username}</td>
+      <td>${u.role}</td>
+      <td class="num">${created}</td>
+      <td>
+        <div class="row-actions">
+          <button type="button" class="btn btn-danger btn-small user-delete" data-id="${u.id}" data-username="${u.username}" ${isSelf ? 'disabled title="You cannot delete your own account"' : ''}>Delete</button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+document.querySelector('#table-users').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.user-delete');
+  if (!btn || btn.disabled) return;
+
+  if (!confirm(`Delete account "${btn.dataset.username}"?`)) return;
+
+  const res = await fetch(`/api/users/${btn.dataset.id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json();
+    alert('Error: ' + err.error);
+    return;
+  }
+
+  loadUsers();
+});
+
+document.querySelector('#form-user').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.querySelector('#message');
+  msg.textContent = '';
+  msg.className = 'form-message';
+
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.querySelector('#user-username').value,
+        password: document.querySelector('#user-password').value,
+        role: document.querySelector('#user-role').value,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Request failed');
+    }
+
+    e.target.reset();
+    msg.textContent = 'Account created.';
+    msg.classList.add('success');
+    loadUsers();
+  } catch (err) {
+    msg.textContent = 'Error: ' + err.message;
+    msg.classList.add('error');
+  }
+});
+
+loadUsers();
+</script>
+<script src="js/nav.js"></script>
+
+</body>
+</html>
